@@ -1,0 +1,674 @@
+---
+title: "Important Factors and Analysis on the Existence of Brown Fat"
+header-includes:
+  \usepackage{setspace}
+  \usepackage{fvextra}
+  \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+output: 
+  pdf_document:
+    latex_engine: xelatex
+date: "2023-04-10"
+---
+
+```{=tex}
+\pagenumbering{roman}
+\thispagestyle{empty}
+\begin{center}
+
+\vspace{15cm}
+
+{\large Group 27}
+
+Aleksandar Chionglo - 1006137645, Report \& Presentation \& Data Analysis
+
+Noor Nasri - 1007104036, Model Diagnostics \& Validation \& Residual Analysis
+
+Roa Brahimi - 1006934702, Cleaning, EDA, Collinearity Check \& Model Building
+
+Taran Azad - 1006501643, Correlation \& Data Analysis
+\end{center}
+```
+\newpage
+
+```{=tex}
+\pagenumbering{arabic}
+\begin{center}
+{\large Background and Information}
+\end{center}
+```
+```{=tex}
+\begin{spacing}{2.5}
+
+Brown fat is a type of fat tissue that is specialized for energy expenditure and heat production. The primary function of brown fat is to generate heat by burning calories. (Marken Lichtenbelt, 2021) Brown fat is most commonly found in newborns and hibernating animals, but recent research has shown that adults also have small amounts of brown fat. (CANNON and NEDERGAARD, 2004) The goal of this report is to predict the existence of brown fat in individuals suffering from cancer. We will look at some key variables that we believe have the highest correlation to the existence of brown fat.
+
+
+NOTE: We understand that this document is very lengthy, however the BrownFat data was very technical so we decided on a long series of steps, which we would still like to demonstrate and explain.
+\end{spacing}
+```
+\newpage
+
+# Cleaning, EDA, Collinearity Check
+
+## Cleaning
+
+In this subsection, we focus on cleaning the data set to ensure its quality and reliability for further analysis. First, we correct the column names by assigning them more appropriate titles to avoid the typos in our raw data. To address missing values in the data set, we replace any occurrences of "NA" with actual NA values, allowing for more accurate calculations of missing data.
+
+Next, we examine the number of missing values in each column using the sapply function. We then remove the ID column, as it does not provide any relevant information for our analysis. Following this, we calculate the proportion of missing values in the TSH variable and decide to remove it entirely from the dataset due to a high proportion of missing data.
+
+Afterward, we convert the Month column to a numerical class to enable easier data manipulation and analysis. Finally, we inspect the first few rows of the data set using the head function and generate summary statistics to better understand the data's distribution and characteristics.
+
+```{r}
+library(readxl)
+knitr::opts_chunk$set(fig.width=6, fig.height=4) 
+
+# Read the dataset
+data <- read_excel("BrownFat.xls")
+
+# Rename columns due to typos
+colnames(data) <- c("ID", "Sex", "Diabetes", "Age", "Day", "Month", "Ext_Temp", "2D_Temp", "3D_Temp", "7D_Temp", "1M_Temp", "Season", "Duration_Sunshine", "Weight", "Size", "BMI", "Glycemia", "Lean_Body_Weight", "Cancer_Status", "Cancer_Type", "TSH", "BrownFat", "Total_Vol")
+
+# Convert "NA" values to actual missing values
+data[data == "NA"] <- NA
+
+# Check for missing values in each column
+sapply(data, function(x) sum(is.na(x)))
+
+# Remove ID column
+data <- data[, -1]
+
+# Check the proportion of missing values in the TSH variable
+prop_na <- mean(is.na(data$TSH))
+print(paste("Proportion of missing values in TSH:", prop_na))
+
+# Drop the TSH variable from the dataset
+data <- data[, !(names(data) %in% "TSH")]
+
+# Convert Month column to numerical class
+data$Month <- match(data$Month, month.name)
+
+# Inspect the first few rows of the dataset
+head(data)
+
+# Generate summary statistics for the dataset
+#summary(data) #OMITTED FOR SPACE
+
+```
+
+As the focus of our research is on individuals with a cancer diagnosis, we proceed to filter out any rows where the Cancer_Status is 0.
+
+After filtering the data, we once again check for missing values in each column using the sapply function. This ensures that our dataset is now concentrated on the target population of interest for our case study, providing more accurate and relevant insights during subsequent analyses.
+
+```{r}
+
+table(data$Cancer_Status)
+
+# Filter out rows with Cancer_Status = 0
+data <- subset(data, Cancer_Status != 0)
+# Check for missing values in each column
+#sapply(data, function(x) sum(is.na(x))) #OMITTED FOR SPACE
+```
+
+In this step, we check for potential errors in the dataset that could impact the validity of our analysis. Specifically, we identify instances where the Lean Body Weight (LBW) value is greater than the total weight, which is a logical inconsistency.
+
+```{r}
+# Check for individuals with LBW greater than total weight
+error_rows <- data$Lean_Body_Weight > data$Weight
+
+# Print the rows with errors - OMITTED FOR SPACE
+# data[error_rows, ]
+
+# Filter out individuals with LBW greater than total weight
+data <- data[data$Lean_Body_Weight <= data$Weight, ]
+```
+
+We continue our efforts to identify and address potential errors in the dataset by examining cases where an individual's age is less than 1 or their size (height) is less than 90 cm. These values are likely erroneous or represent outliers that could impact our analysis. We particularly found an infant the size of an adult.
+
+```{r}
+# Find individuals with age less than 1 or size less than 90 cm
+error_rows <- data$Age < 1 | data$Size < 90
+
+# Print the rows with errors - OMITTED FOR SPACE
+# data[error_rows, ]
+
+# Filter out individuals with age less than 1 or size less than 90 cm
+data <- data[data$Age >= 1 | data$Size <= 90, ]
+```
+
+In this step, we investigate another potential source of error in the dataset: individuals with no diabetes (Diabetes == 0) but abnormally high glycemia levels (Glycemia \>= 11.1). We then print the rows containing these apparent discrepancies to further examine the issue. However, after considering the context, we decide not to filter these data points. This decision is based on the fact that it is not uncommon for cancer patients, regardless of their type 1 or type 2 cancer status, to have elevated blood sugar (glucose) levels. Consequently, these data points may still be valid and relevant to our analysis.
+
+```{r}
+# Filter out individuals with no diabetes and abnormally high glycemia
+error_rows <- data$Diabetes == 0 & data$Glycemia >= 11.1
+
+# Print the rows with errors - OMITTED FOR SPACE
+#data[error_rows, ]
+
+# Opted out of filtering these data points because it is not uncommon for someone 
+# with cancer of type 1 and type 2 to have elevated blood sugar (glucose) levels.
+```
+
+We focus on identifying and correcting potential errors related to the Day and Month variables. One example of such an error would be a recorded day of 365 in January, when it should be in December. To address this, we create a custom function that maps the day of the year to the correct month, taking into account both leap and non-leap years. Essentially, we find that September aligning with day 242 is an error since that would be in actuality part of August in a leap year and in a normal year. Once we have identified these errors, we filter out the rows containing them, ensuring that our dataset is free of inaccuracies related to the Day and Month variables. This process helps improve the quality and reliability of our data for subsequent analysis.
+
+```{r}
+# Modify the map_days_to_months function to handle both leap and normal years
+map_days_to_months <- function(day, leap) {
+  days_in_month <- c(31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+  
+  if (leap) {
+    days_in_month[2] <- 29
+  }
+  
+  cumulative_days <- cumsum(days_in_month)
+  
+  month <- 1
+  for (i in 1:length(cumulative_days)) {
+    if (day <= cumulative_days[i]) {
+      break
+    } else {
+      month <- month + 1
+    }
+  }
+  return(month)
+}
+
+# Create two new columns for the mapped months considering leap and normal years
+data_copy <- data
+data_copy$Mapped_Month_Leap <- sapply(data_copy$Day, map_days_to_months, leap = TRUE)
+data_copy$Mapped_Month_Normal <- sapply(data_copy$Day, map_days_to_months, leap = FALSE)
+
+# Check if the mapped months align with the original months considering both leap and normal years
+error_rows <- (data_copy$Mapped_Month_Leap != data_copy$Month) & (data_copy$Mapped_Month_Normal != data_copy$Month)
+
+# Print the rows with errors
+data_copy[error_rows, ]
+
+# Remove the newly created columns from data_copy
+data_copy$Mapped_Month_Leap <- NULL
+data_copy$Mapped_Month_Normal <- NULL
+
+# Filter out the mapped months that don't align with the original months considering both leap and normal years
+data <- data_copy[!error_rows, ]
+```
+
+
+## EDA
+
+Our aim is to gain a deeper understanding of the data set and its features to inform subsequent modeling and analysis. We split the dataset into two separate subsets: a training set (70% of the data) and a testing set (30% of the data). This division enables us to build and evaluate our models using different portions of the data, which helps prevent overfitting and ensures that our results are more generalizable.
+
+```{r}
+
+library(caret)
+
+# Set the seed for reproducibility
+set.seed(1007104036)
+
+# Split the data into two sets, 70% for training and 30% for testing
+train_index <- createDataPartition(data$Total_Vol, p = 0.7, list = FALSE)
+test_data <- data[-train_index,]
+train_data <- data[train_index,]
+
+
+```
+
+Our primary objective is to explore the relationships between the variables in our dataset. To accomplish this, we define a function, create_scatterplots, which generates scatterplots for a given variable with respect to the total volume of brown fat. The scatterplots are color-coded based on the presence or absence of brown fat and are further separated by sex using the facet_wrap function.
+
+```{r}
+library(ggplot2)
+
+# Define a function to create scatterplots for a given variable
+create_scatterplots <- function(variable) {
+  ggplot(data, aes(x = !!sym(variable), y = Total_Vol)) +
+    geom_point(aes(color = factor(BrownFat))) +
+    facet_wrap(~ Sex)
+}
+
+# Create a list of variables to create scatterplots for
+variables <- c("Age", "Duration_Sunshine", "Ext_Temp", "Weight", "Glycemia", "Day")
+
+# Loop through the list and create scatterplots for each variable
+for (variable in variables) {
+  print(create_scatterplots(variable))
+}
+
+```
+
+Upon analyzing these scatterplots, we observe that older females tend to have higher brown fat volumes. Additionally, longer sunshine durations appear to correlate with lower brown fat volumes. We also notice that individuals with lower weights have higher brown fat volumes, with females showing more extreme cases. Both genders with normal glycemia levels exhibit higher brown fat volumes. Lastly, we find higher brown fat volumes at the beginning and end of the year, aligning with colder fall and winter seasons. This preliminary exploration of the data helps us identify potential patterns and relationships that can be further investigated during subsequent analysis stages.
+
+In this next part of the analysis, we create violin plots to visualize the distribution of continuous variables in relation to the presence or absence of brown fat. These plots not only display the overall distribution of each variable but also provide an indication of how the data is spread within each category of brown fat presence. By overlaying box plots on the violin plots, we can also identify central tendencies and potential outliers in the data.
+
+Finally, we combine all the violin plots into a single figure to facilitate comparison and visualization of the relationships between brown fat and each continuous variable.
+
+```{r}
+library(ggplot2)
+
+# Define a function to create violin plots for a given variable
+create_violinplots <- function(variable) {
+  ggplot(data, aes(x = factor(BrownFat), y = !!sym(variable), fill = factor(BrownFat))) +
+    geom_violin(linewidth = 0.5, color = "black", alpha = 0.6) +
+    geom_boxplot(width=0.1, color="white", outlier.shape=NA) +
+    scale_fill_manual(values = c("#FFA500", "#6a0dad")) +
+    labs(x = ifelse(variable == "Age", "Brown Fat", ""), y = variable) +
+    theme_classic() +
+    guides(fill = "none") +
+    theme(axis.title = element_text(size = 8),
+          axis.text = element_text(size = 8))
+}
+
+# Create a list of continuous variables
+continuous_vars <- c("Age", "Ext_Temp", "2D_Temp", "3D_Temp", "7D_Temp", "1M_Temp", "Duration_Sunshine", "Weight", "Size", "BMI", "Glycemia", "Lean_Body_Weight")
+
+# Create an empty list to store plots
+plots <- list()
+
+# Loop through the list and create violin plots for each variable
+for (variable in continuous_vars) {
+  plots[[variable]] <- create_violinplots(variable)
+}
+
+# Combine the plots into a single figure using grid.arrange
+library(gridExtra)
+grid.arrange(grobs = plots, ncol = 4)
+```
+
+We enhance the previous visualizations by creating interactive violin plots using the plotly library. By transitioning from static to interactive plots, we enable users to explore the data more thoroughly and gain deeper insights into the relationships between continuous variables and the presence or absence of brown fat.
+
+Similar to the earlier violin plots, these interactive visualizations depict the distribution of continuous variables such as age, external temperature, duration of sunshine, weight, size, BMI, glycemia, and lean body weight, among others. However, the interactivity provided by plotly allows users to hover over specific data points, revealing more precise information on demand.
+
+```{r}
+library(plotly)
+
+# Create a list of continuous variables
+continuous_vars <- c("Age", "Ext_Temp", "2D_Temp", "3D_Temp", "7D_Temp", "1M_Temp", "Duration_Sunshine", "Weight", "Size", "BMI", "Glycemia", "Lean_Body_Weight")
+
+# Loop through the list and create violin plots for each variable using plotly
+for (variable in continuous_vars) {
+  print(plot_ly(data, x = ~BrownFat, y = ~get(variable), type = "violin", box = list(visible = TRUE),
+          points = "all", jitter = 0.05, color = ~factor(BrownFat), colors = c("#FFA500", "#6a0dad"), showlegend = FALSE) %>%
+    layout(title = paste(variable, "by Brown Fat"), xaxis = list(title = "Brown Fat"),
+           yaxis = list(title = variable), margin = list(t = 50)))
+}
+
+```
+
+\newpage
+
+## Collinearity check
+
+In this next part, we address the issue of multicollinearity by calculating the correlation matrix for all numeric variables in our dataset. We then visualize this correlation matrix using a heatmap, where each tile's color intensity reflects the strength and direction of the relationship between a pair of variables. Blue tiles represent negative correlations, while red tiles indicate positive correlations. White tiles signify a lack of correlation between variables.
+
+Based on the heatmap, we identify highly correlated variables and remove them from the dataset to reduce multicollinearity. This process ensures that our analysis is not affected by redundant information, which could lead to unreliable or misleading results.
+
+The output displays a list of variables identified as highly correlated with other variables in the dataset: 3D_Temp, 1M_Temp, 2D_Temp, 7D_Temp, Lean_Body_Weight, Weight, and Month. These variables exhibit strong relationships with one or more variables, which may lead to multicollinearity and undermine the reliability of our analysis. By removing these highly correlated variables from our dataset, we mitigate the risk of multicollinearity, thus ensuring more accurate and dependable results in subsequent modeling and analysis.
+
+After removing these highly correlated variables, we recalculate the correlation matrix and visualize it using another heatmap. This final heatmap confirms the reduced multicollinearity in our cleaned dataset, making it more suitable for subsequent modeling and analysis.
+
+```{r}
+library(dplyr)
+library(caret)
+
+# calculate correlation matrix
+corr_matrix <- cor(select_if(data, is.numeric))
+
+# plot correlation matrix with ggplot2
+ggplot(data = as.data.frame(as.table(corr_matrix)), out.width = "40%") +
+  geom_tile(aes(x = Var1, y = Var2, fill = Freq)) +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, limit = c(-1,1), space = "Lab", name="Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 1, 
+                                   size = 8, hjust = 1))
+
+highly_correlated <- findCorrelation(corr_matrix, cutoff = 0.8) # You can adjust the cutoff value to your preference
+highly_correlated_vars <- colnames(data)[highly_correlated]
+
+print(highly_correlated_vars)
+
+data_copy <- data
+
+cleaned_data_frame <- data_copy[, -highly_correlated]
+
+# calculate correlation matrix
+corr_matrix <- cor(select_if(cleaned_data_frame, is.numeric))
+
+# plot correlation matrix with ggplot2
+ggplot(data = as.data.frame(as.table(corr_matrix)), out.width = "40%") +
+  geom_tile(aes(x = Var1, y = Var2, fill = Freq)) +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, limit = c(-1,1), space = "Lab", name="Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 1, 
+                                   size = 3, hjust = 1))
+
+```
+
+In this next part, we further address multicollinearity by evaluating the Variance Inflation Factor (VIF) for each predictor variable in a multiple linear regression model. VIF quantifies the severity of multicollinearity in a regression analysis and provides an index to measure how much the variance of an estimated regression coefficient increases due to collinearity. A VIF value above a certain threshold, such as 5, indicates that the predictor variable is highly correlated with the other variables in the model and should be removed or adjusted.
+
+After fitting the initial regression model and calculating the VIF for each predictor variable, we identify that the "Duration_Sunshine" variable has a high VIF value, indicating multicollinearity. We then remove this variable from our dataset and fit a new multiple linear regression model without it. The updated VIF values for each predictor variable demonstrate that multicollinearity has been significantly reduced, ensuring a more reliable and accurate analysis in subsequent steps.
+
+```{r}
+library(car)
+
+cleaned_data_frame = select_if(cleaned_data_frame, is.numeric)
+
+# Fit a multiple linear regression model
+mod <- lm(Total_Vol ~ Sex + Diabetes + Age + Day + Ext_Temp + Season + Duration_Sunshine + Size + BMI + Glycemia + BrownFat, data = cleaned_data_frame)
+
+# Compute VIF for each predictor variable
+vif(mod)
+
+# Remove "Duration_Sunshine" variable
+cleaned_data_frame <- cleaned_data_frame[, !(names(cleaned_data_frame) %in% "Duration_Sunshine")]
+
+# Fit a multiple linear regression model
+mod <- lm(Total_Vol ~ Sex + Diabetes + Age + Day + Ext_Temp + Season + Size + BMI + Glycemia + BrownFat, data = cleaned_data_frame)
+
+# Compute VIF for each predictor variable
+vif(mod)
+```
+
+\newpage
+
+# Model Building
+
+## MAIN EFFECT MODEL:
+
+In the Model Building section, our primary objective is to create a statistical model that can accurately predict the total volume of brown fat based on the available variables. We begin by fitting a multiple linear regression model using all the available variables, excluding the BrownFat variable. This initial model serves as a starting point for our subsequent analysis.
+
+To refine our model and identify the most relevant predictors, we employ a stepwise regression approach based on the Akaike Information Criterion (AIC). This technique iteratively adds or removes variables from the model, assessing the goodness of fit at each step. The final stepwise model includes only the most informative predictors while avoiding overfitting and multicollinearity issues.
+
+```{r}
+# Load the necessary packages
+library(MASS)
+
+# Drop BrownFat and fit model with Total_Vol as the response variable
+total_vol_model <- lm(Total_Vol ~ . - BrownFat, data = cleaned_data_frame)
+
+# fit stepwise regression model based on AIC
+stepwise_total_vol_model <- stepAIC(total_vol_model, direction = "both", trace = FALSE)
+
+# print summary of stepwise_total_vol_model
+summary(stepwise_total_vol_model)
+
+```
+
+The output presents the results of the final multiple linear regression model, which predicts the total volume of brown fat using the following independent variables: Sex, Age, Day, External Temperature (Ext_Temp), and BMI.
+
+The coefficients section in the output provides the estimated effects of each variable on the total volume of brown fat:
+
+> Sex: The estimated coefficient for Sex is -2.89645, indicating that being male (coded as 2) is associated with a decrease of approximately 2.9 units in the total volume of brown fat, compared to being female (coded as 1). This effect is statistically significant with a p-value less than 0.001.
+
+> Age: The estimated coefficient for Age is -0.13788, suggesting that for each additional year of age, the total volume of brown fat decreases by approximately 0.14 units. This effect is statistically significant with a p-value less than 0.001.
+
+> Day: The estimated coefficient for Day is 0.00733, implying that for each additional day of the year, the total volume of brown fat increases by approximately 0.007 units. This effect is statistically significant with a p-value of 0.01495.
+
+> Ext_Temp: The estimated coefficient for External Temperature is -0.08512, indicating that for each additional degree Celsius in external temperature, the total volume of brown fat decreases by approximately 0.085 units. This effect is statistically significant with a p-value less than 0.001.
+
+> BMI: The estimated coefficient for BMI is -0.16495, suggesting that for each additional unit of BMI, the total volume of brown fat decreases by approximately 0.165 units. This effect is statistically significant with a p-value less than 0.01.
+
+The model's residual standard error is 15.68, representing the average deviation of the observed values from the predicted values. The Multiple R-squared value is 0.03121, while the Adjusted R-squared value is 0.02937. These values indicate that approximately 3.1% of the variation in the total volume of brown fat can be explained by the selected independent variables. The F-statistic is 16.97, with a p-value less than 2.2e-16, suggesting that the model is statistically significant and performs better than a model without any predictors.
+
+## INTERACTION MODEL:
+
+In this section, we extend our analysis by incorporating interaction effects into the model. Interaction effects occur when the relationship between two independent variables and the dependent variable depends on the values of one or both of these independent variables. By including interaction terms in our model, we can account for more complex relationships between the predictors and the response variable.
+
+We create a new model that includes interaction terms between various pairs of independent variables. These interactions allow us to examine how the effect of one independent variable on the total volume of brown fat changes depending on the values of other independent variables. This interaction model enables a more comprehensive understanding of the relationships in the dataset and potentially improves the model's predictive accuracy.
+
+After fitting the interaction model, we examine the summary statistics to assess its performance, understand the contribution of each predictor and interaction term, and evaluate the model's overall quality.
+
+```{r}
+# Add an interaction term between Age and Ext_Temp
+total_vol_model_int <- lm(Total_Vol ~ . + Sex*Age + Sex*Diabetes + Sex*Day + Sex*Ext_Temp + Sex*BMI + Diabetes*Age + Diabetes*Day + Diabetes*Ext_Temp + Diabetes*BMI + Age*Day + Age*Ext_Temp + Age*BMI + Day*Ext_Temp + Day*BMI + Ext_Temp*BMI - BrownFat, data = cleaned_data_frame)
+
+# Check the summary of the interaction model
+summary(total_vol_model_int)
+
+```
+
+The output of the interaction model provides valuable information about the relationships between the predictors and the total volume of brown fat. The model's performance is measured by its R-squared and adjusted R-squared values. The R-squared value (0.04533) indicates that approximately 4.53% of the variation in total volume can be explained by the predictors included in the model. The adjusted R-squared value (0.03657) accounts for the complexity of the model, which penalizes the R-squared value for the inclusion of additional predictors.
+
+In this next part, we create a function that extracts the significant predictors from the model summary output. We define the significance level using the alpha parameter (default = 0.05), which is the threshold for determining the statistical significance of each predictor.
+
+Using this function, we identify the significant predictors for the interaction model. The output displays the names of the significant predictors, including the intercept term and the interaction terms. We can use this information to better understand the factors that contribute to the total volume of brown fat and gain insights into the complex relationships between the independent variables and the response variable.
+
+In this case, the significant predictors for the Total Vol model are: ""Sex", "Age", "Day", "Ext_Temp", "BMI", "Sex:Ext_Temp", "Age:Day", "Age:Ext_Temp", and "Age:BMI". These predictors can guide further analysis and interpretation of the relationship between the predictors and the total volume of brown fat.
+
+```{r}
+# Function to get significant predictors
+get_significant_predictors <- function(model_summary, alpha = 0.05) {
+  predictors <- rownames(model_summary$coefficients)
+  p_values <- model_summary$coefficients[, "Pr(>|t|)"]
+  significant_predictors <- predictors[p_values < alpha]
+  return(significant_predictors)
+}
+
+# Get significant predictors for each model
+total_vol_model_int_significant <- get_significant_predictors(summary(total_vol_model_int))
+
+# Print significant predictors
+cat("Significant predictors for Total Vol model:\n")
+print(total_vol_model_int_significant)
+
+```
+
+We then fit a new linear regression model using the predictors identified from the interaction model.
+
+```{r}
+# Fit a new linear regression model with the transformed response variable
+total_vol_model_complete <- lm(Total_Vol ~ Sex + Age + Day + Ext_Temp + BMI +  Sex*Ext_Temp + Age*Day + Age*Ext_Temp + Age*BMI - BrownFat, data = cleaned_data_frame)
+
+# Check the summary of the interaction model
+summary(total_vol_model_complete)
+```
+
+Based on the interaction model, the final selected regression equation is:
+
+Total_Vol = 33.40133 - 0.3500994 \* Age + 0.0421002 \* Day - 0.5775968 \* Ext_Temp - 3.7009744 \* Sex + 0.1204486 \* Sex \* Ext_Temp - 0.8511772 \* BMI - 0.0005473 \* Age \* Day + 0.0049803 \* Age \* Ext_Temp + 0.0109658 \* Age \* BMI
+
+Coefficient interpretations:
+
+> Intercept (33.40133): When all the predictor variables are zero, the expected Total_Vol is 33.40.
+
+> Age (-0.3500994): On average, a one-year increase in age results in a decrease of 0.35 units in Total_Vol, holding all other variables constant.
+
+> Day (0.0421002): On average, a one-day increase results in an increase of 0.042 units in Total_Vol, holding all other variables constant.
+
+> Ext_Temp (-0.5775968): On average, a one-degree increase in external temperature results in a decrease of 0.578 units in Total_Vol, holding all other variables constant.
+
+> Sex (-3.7009744): On average, the Total_Vol for males (Sex = 2) is approximately 3.70 units lower than for females (Sex = 1), holding all other variables constant.
+
+> Sex \* Ext_Temp (0.1204486): The interaction between Sex and Ext_Temp suggests that the effect of external temperature on Total_Vol differs between males and females. For every one-degree increase in external temperature, the difference in Total_Vol between males and females increases by 0.120 units.
+
+> BMI (-0.8511772): On average, a one-unit increase in BMI results in a decrease of 0.851 units in Total_Vol, holding all other variables constant.
+
+> Age \* Day (-0.0005473): The interaction between Age and Day indicates that the effect of days on Total_Vol changes with age. For every one-year increase in age, the effect of a one-day increase on Total_Vol decreases by 0.000547 units.
+
+> Age \* Ext_Temp (0.0049803): The interaction between Age and Ext_Temp suggests that the effect of external temperature on Total_Vol changes with age. For every one-year increase in age, the effect of a one-degree increase in external temperature on Total_Vol increases by 0.00498 units.
+
+> Age \* BMI (0.0109658): The interaction between Age and BMI indicates that the effect of BMI on Total_Vol changes with age.
+
+> For every one-year increase in age, the effect of a one-unit increase in BMI on Total_Vol increases by 0.01097 units.
+
+### Key takeaways:
+
+1.  As a person gets older, their Total_Vol tends to decrease.
+2.  As days pass, Total_Vol tends to slightly increase.
+3.  When the external temperature increases, Total_Vol tends to decrease.
+4.  On average, males have a lower Total_Vol than females.
+5.  A person with a higher BMI generally has a lower Total_Vol.
+
+The interaction terms help us understand how the relationship between two factors affects Total_Vol:
+
+1.  The effect of external temperature on Total_Vol is different for males and females. As external temperature increases, the difference in Total_Vol between males and females also increases.
+2.  The effect of days on Total_Vol changes as a person gets older. As a person ages, the impact of each passing day on Total_Vol becomes smaller.
+3.  The effect of external temperature on Total_Vol changes with age. As a person gets older, the impact of external temperature on Total_Vol increases.
+4.  The effect of BMI on Total_Vol changes as a person gets older. As a person gets older, the impact of BMI on Total_Vol increases.
+
+\newpage
+
+# Model Diagnostics
+
+After all these steps, we hope to have a good linear model for predicting total volume, allowing us to set a threshold in order to determine if brownfat is present. However, analyzing the residuals and Q-Q plot clearly demonstrate an issue.
+
+```{r}
+
+# Plot residuals and QQ plot for total_vol_model_complete
+par(mfrow = c(1, 2))
+plot(total_vol_model_complete, which = 1, main = "Full Data")
+residuals_complete <- total_vol_model_complete$residuals
+std_resid_complete <- scale(residuals_complete)
+qqnorm(std_resid_complete)
+qqline(std_resid_complete)
+
+```
+
+While chaotic, there are two very important patterns that help us truly understand the challenge of this task. The dataset is highly skewed in favour of BrownFat = Total_Vol = 0. This is why we see a very thick line hovering downwards around the residuals=0. As our features grow, our model continues to overestimate the Total_Vol on this line. This line belongs to a large group of datapoints with Total_Vol = 0, and since the linear model also needs to predict large values of Total_Vol, the skew will grow. Likewise, the datapoints where Total_Vol \> 0 are all underestimated, as the model needs to cater for the majority of points at 0. Putting this together, it should be clear that our data is Bimodal, however we can also find this by applying the box-cox transformation after analysing the Q-Q plot.
+
+```{r}
+shifted_data <- cleaned_data_frame
+shifted_data$Total_Vol <- shifted_data$Total_Vol + 0.000001
+
+# Fit a linear regression model with the shifted response variable
+total_vol_model_int_filtered <- lm(Total_Vol ~ . + Sex*Ext_Temp + Age*Day + Age*Ext_Temp + Age*BMI - BrownFat, data = shifted_data)
+
+# Apply the Box-Cox transformation to the shifted response variable
+bc <- boxcox(total_vol_model_int_filtered, plotit = FALSE)
+lambda_val <- bc$x[which.max(bc$y)]
+shifted_data$Total_Vol <- (shifted_data$Total_Vol^lambda_val - 1) / lambda_val
+cat("Applied Box-Cox with lambda: ", lambda_val, "\n")
+
+# Fit a new linear regression model with the transformed response variable
+total_vol_model_complete_shifted <- lm(Total_Vol ~ . +  Sex*Ext_Temp + Age*Day + Age*Ext_Temp + Age*BMI - BrownFat, data = shifted_data)
+
+total_vol_model_subset_shifted <- lm(Total_Vol ~ . +  Sex*Ext_Temp + Age*Day + Age*Ext_Temp + Age*BMI - BrownFat, data = shifted_data[shifted_data$Total_Vol > 0,])
+
+# Set up a 2x2 plot layout
+par(mfrow = c(2, 2))
+
+# Plot residuals and QQ plot for total_vol_model_complete_shifted
+plot(total_vol_model_complete_shifted, which = 1, main = "Full Data")
+residuals_complete <- total_vol_model_complete_shifted$residuals
+std_resid_complete <- scale(residuals_complete)
+qqnorm(std_resid_complete)
+qqline(std_resid_complete)
+
+# Plot residuals and QQ plot for total_vol_model_subset_shifted
+plot(total_vol_model_subset_shifted, which = 1, main = "Subset of Data")
+residuals_subset <- total_vol_model_subset_shifted$residuals
+std_resid_subset <- scale(residuals_subset)
+qqnorm(std_resid_subset)
+qqline(std_resid_subset)
+
+```
+
+The first boxcox transformation plotted clearly indicates that the data is bimodal.This leads us to question, would it be possible to isolate the datapoints and build separate models for Total_Vol == 0 and Total_Vol \> 0? The second plot shows the boxcox transformation for the values where Total_Vol \> 0. Indeed, with further transformations and by focusing on this from the start, it could be possible to build a separate model to predict the total volume, once we believe there is Brown Fat.
+
+However, there is a major issue: Splitting the data does not help us determine the existence of BrownFat, as we need both Total_Vol == 0 and Total_Vol \> 0 in order to predict Total_Vol \>= threshold. More advanced techniques are required to improve this model given the bimodal situation. However, it is also important to note that this model is still valid for detecting brownfat. While the distribution of the Total_Vol makes it hard to accurately predict the volume, underestimating and overestimating these two subsets would still work, as long as a pattern can be predicted.
+
+This leads us to testing this model for accuracy and acquiring useful metrics.
+
+```{r}
+DATASET = data
+DATASET_subset <- subset(DATASET, Total_Vol > 0)
+
+# predict brownfat = 0 or = 1
+predictionValues <- predict(total_vol_model_complete, newdata = DATASET)
+plot(predictionValues, DATASET$Total_Vol, xlab = "Predicted Values", ylab = "Actual Values", main = "Predicted vs Actual Values") 
+
+
+predictions_BF <- ifelse(predictionValues > 8, 1, 0)
+
+# Get accuracy / sensitivity / specificity for the brownfat prediction
+cm <- table(predictions_BF, DATASET$BrownFat)
+
+sensitivity <- cm[2,2]/sum(cm[2,])
+specificity <- cm[1,1]/sum(cm[1,])
+accuracy <- sum(diag(cm))/sum(cm)
+
+# Print the results
+cat("Sensitivity: ", sensitivity, "\n")
+cat("Specificity: ", specificity, "\n")
+cat("Accuracy: ", accuracy, "\n")
+
+# get important values
+mspe <- mean((DATASET_subset$Total_Vol - predict(total_vol_model_complete, newdata = DATASET_subset))^2)
+
+# Calculate MSE_F
+mse_f <- mean(resid(total_vol_model_complete)^2)
+
+# Print results
+cat("MSPE:", mspe, "\n")
+cat("MSE_F:", mse_f, "\n")
+
+```
+
+As expected, plotting the expected total volume vs the output is chaotic, due to both the distribution and our skew. However, we are able to acquire 90% accuracy when predicting the existence of BrownFat. One could also interpret the MSPE and MSE_F, however these values are also skewed by the bimodal setup of this approach. Furthermore, sensitivity is a major point of failure that should be addressed. We will revisit this in our conclusion, however it is also important to verify our results are similar on the Test data.
+
+```{r}
+DATASET = test_data
+DATASET_subset <- subset(DATASET, Total_Vol > 0)
+
+# predict brownfat = 0 or = 1
+predictionValues <- predict(total_vol_model_complete, newdata = DATASET)
+
+#plot(predictionValues, DATASET$Total_Vol, xlab = "Predicted Values", ylab = "Actual Values", main = "Predicted vs Actual Values") #OMITTED FOR SPACE
+
+
+predictions_BF <- ifelse(predictionValues > 8, 1, 0)
+
+# Get accuracy / sensitivity / specificity for the brownfat prediction
+cm <- table(predictions_BF, DATASET$BrownFat)
+
+sensitivity <- cm[2,2]/sum(cm[2,])
+specificity <- cm[1,1]/sum(cm[1,])
+accuracy <- sum(diag(cm))/sum(cm)
+
+# Print the results
+cat("Sensitivity: ", sensitivity, "\n")
+cat("Specificity: ", specificity, "\n")
+cat("Accuracy: ", accuracy, "\n")
+
+# get important values
+mspe <- mean((DATASET_subset$Total_Vol - predict(total_vol_model_complete, newdata = DATASET_subset))^2)
+
+# Calculate MSE_F
+mse_f <- mean((DATASET$Total_Vol - predictionValues)^2)
+
+# Print results
+cat("MSPE:", mspe, "\n")
+cat("MSE_F:", mse_f, "\n")
+
+```
+
+As expected, running our predictions on the testing set validates our statements by achieving 90%+ accuracy and similar plots.
+
+\newpage
+
+```{=tex}
+\begin{center}
+  \textbf{Conclusion}
+\end{center}
+```
+```{=tex}
+\begin{spacing}{2.5}
+
+In conclusion, we were able to find valuable data after omitting some variables and using the model we created. We could see clearly that brown fat occurs more commonly in young females between the ages 20-30. The model we built was successfully able to predict the existence of brown fat with a 90\% accuracy. We believe that in future, we could have further transformations and cuts to improve sensitivity/accuracy. 
+
+However, given that our data set was limited after we omitted the individuals without cancer, it would have been challenging to achieve this goal. Polynomial terms and more advanced techniques could be attempted in the future.
+
+\end{spacing}
+```
+```{=tex}
+\newpage
+\begin{center}
+{\large References}
+\end{center}
+```
+```{=tex}
+\begin{spacing}{2.5}
+
+\begin{enumerate}
+\item Cannon, B. and Nedergaard, J. (2004). Brown Adipose Tissue: Function and Physiological Significance. Physiological Reviews, [online] 84(1), pp.277–359. doi:https://doi.org/10.1152/physrev.00015.2003.
+
+\item Marken Lichtenbelt, W.D. (2021). Human Brown Adipose Tissue—A Decade Later. Obesity, 29(7), pp.1099–1101. doi:https://doi.org/10.1002/oby.23166.
+\end{enumerate}
+
+\end{spacing}
+```
